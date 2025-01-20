@@ -1,8 +1,9 @@
+import os
 import pickle
 import numpy as np
 import pandas as pd
 from sklearn import clone
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.neighbors import KNeighborsClassifier
@@ -11,21 +12,25 @@ from sklearn.svm import SVC
 from exp_utils import load_data_save_extracted_features
 from copy import deepcopy
 
+def save_checkpoint(state, CHECKPOINT_FILE):
+	with open(CHECKPOINT_FILE, "wb") as f:
+		pickle.dump(state, f)
 
+
+def load_checkpoint(CHECKPOINT_FILE):
+	if os.path.exists(CHECKPOINT_FILE):
+		with open(CHECKPOINT_FILE, "rb") as f:
+			return pickle.load(f)
+	return None
 
 def prepare_data_for_exp3(prepared_data, time_frame):
-	#train_data = [data[0] for data in prepared_data if data[0]['subject'] in train_subjects]
-	#test_data = [data[0] for data in prepared_data if data[0]['subject'] not in train_subjects]
-	
 	start_percent, end_percent = time_frame
 
 	start_index = int(max(0, start_percent * prepared_data[0][1].shape[0] / 100))
 	end_index = int(min(prepared_data[0][1].shape[0], end_percent * prepared_data[0][1].shape[0] / 100))
 
-	
-
-	train_data = []#[data[0].T()[start_index:end_index].T() for data in prepared_data]
-	test_data = []#[data[0][:start_index] for data in prepared_data] + [data[0][end_index:] for data in prepared_data]
+	train_data = []
+	test_data = []
 
 	train_f = [data[1][start_index:end_index] for data in prepared_data]
 	test_f = [data[1][:start_index] for data in prepared_data] + [data[1][end_index:] for data in prepared_data]
@@ -33,13 +38,16 @@ def prepare_data_for_exp3(prepared_data, time_frame):
 	return pd.DataFrame(train_data), pd.DataFrame(test_data), pd.concat(train_f), pd.concat(test_f)
 
 def exp3():
+	CHECKPOINT_FILE = "exp3_checkpoint.pkl"
 	#windows = [2, 3, 6, 10, 20, 30, 60, 90, 120]
 	windows = [2, 3, 10, 20, 60, 120] # TODO change if needed
 	overlaps = [0, 0.25, 0.5, 0.75] # TODO change if needed
 	sf = 128
 	train_time_frames = [(0, 10), (10, 20), (20, 30), 
 						 (30, 40), (40, 50), (50, 60),
-						 (60, 70), (70, 80), (80, 90), (90, 100)]
+						 (60, 70), (70, 80), (80, 90), (90, 100), 
+						 (0,20), (20,40), (40,60), (60,80),
+						(0,30), (30,60), (0,60), (0,90)]
 	N_REPEATS = 1 # TODO change
 	SUBJECTS = list(range(1, 29))
 	GAMES = list(range(1,5))
@@ -48,8 +56,8 @@ def exp3():
 		RandomForestClassifier(n_estimators=100, n_jobs=-1),
 		RandomForestClassifier(n_estimators=500, n_jobs=-1),
 		KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
-		HistGradientBoostingClassifier(max_iter=1000),
-		SVC()
+		#HistGradientBoostingClassifier(max_iter=1000),
+		#SVC()
 	]
 
 	SPLITTERS = [
@@ -58,15 +66,29 @@ def exp3():
 		#StratifiedKFold(n_splits=5, shuffle=True),
 	]
 
-	all_reports = []
-	for classifier_id, clf_template in enumerate(CLASSIFIERS):
-		for splitter_id, splitter in enumerate(SPLITTERS):
-			for window in windows:
-				for overlap in overlaps:
-					path = f'all_prepared_data_{window}s_overlap_{int(overlap*100)}.pkl'
-					all_prepared_data = pickle.load(open(path, 'rb'))
-					for repeat in range(N_REPEATS):
-						for time_frame in train_time_frames:
+	checkpoint = load_checkpoint(CHECKPOINT_FILE)
+	if checkpoint:
+		f_all_reports = checkpoint["f_all_reports"]	#features reports
+		savepoint_keys = checkpoint["savepoint_keys"]
+		print("Resuming from checkpoint...")
+	else:
+		f_all_reports = []
+		savepoint_keys = {}
+	for repeat in range(N_REPEATS):
+		for overlap in overlaps:
+			for classifier_id, clf_template in enumerate(CLASSIFIERS):
+				for splitter_id, splitter in enumerate(SPLITTERS):
+					for window in windows:
+						savepoint_key = f'{repeat}_{classifier_id}_{splitter_id}_{window}_{overlap}'
+						if savepoint_key in savepoint_keys:
+							continue
+						path = f'all_prepared_data_{window}s_overlap_{int(overlap*100)}.pkl'
+						all_prepared_data = pickle.load(open(path, 'rb'))
+					
+						for time_frame_idx, time_frame in enumerate(train_time_frames):
+							savepoint_key = f'{repeat}_{classifier_id}_{splitter_id}_{window}_{overlap}'
+							#if time_frame_idx < start_frame:
+							#	continue
 							print(f"Classifier: {classifier_id}, Splitter: {splitter_id}, Window: {window}, Overlap: {overlap}, time_frame: {time_frame}, Repeat: {repeat}")
 
 							_, _, train_f, test_f = prepare_data_for_exp3(all_prepared_data, time_frame)
@@ -94,6 +116,18 @@ def exp3():
 								score = accuracy_score(y_test, pred_y)
 								eval_score = accuracy_score(eval_Y, eval_pred_y)
 								
+								score_balanced_arousal = balanced_accuracy_score(y_test['arousal'], pred_y[:,0])
+								eval_score_balanced_arousal = balanced_accuracy_score(eval_Y['arousal'], eval_pred_y[:,0])
+
+								score_balanced_valence = balanced_accuracy_score(y_test['valence'], pred_y[:,1])
+								eval_score_balanced_valence = balanced_accuracy_score(eval_Y['valence'], eval_pred_y[:,1])
+
+								score_precision = precision_score(y_test, pred_y, average='macro')
+								eval_score_precision = precision_score(eval_Y, eval_pred_y, average='macro')
+
+								score_recall = recall_score(y_test, pred_y, average='macro')
+								eval_score_recall = recall_score(eval_Y, eval_pred_y, average='macro')
+
 								report = {
 									'fold': fold_idx, 
 									'classifier': classifier_id, 
@@ -103,19 +137,32 @@ def exp3():
 									'time_frame': time_frame,
 									'repeat': repeat,
 									'score': score, 
-									'eval_score': eval_score
+									'eval_score': eval_score,'score_balanced_arousal': score_balanced_arousal,
+									'score_balanced_valence': score_balanced_valence,
+									'eval_score_balanced_arousal': eval_score_balanced_arousal,
+									'eval_score_balanced_valence': eval_score_balanced_valence,
+									'score_precision': score_precision,
+									'eval_score_precision': eval_score_precision,
+									'score_recall': score_recall,
+									'eval_score_recall': eval_score_recall,
+									'type': 'features'
 								}
 
-								all_reports.append(report)
+								f_all_reports.append(report)
 								
-								print(f"Fold {fold_idx} - Score: {score} - Eval Score: {eval_score}")
-	reports_df = pd.DataFrame(all_reports)
+								print(f"Features: Fold {fold_idx} - Score: {score} - Eval Score: {eval_score}, Score Balanced: {(score_balanced_arousal + score_balanced_valence)/2}, Eval Score Balanced: {(eval_score_balanced_arousal + eval_score_balanced_valence)/2}, Score Recall: {score_recall}, Eval Score Recall: {eval_score_recall}")
+						savepoint_keys[savepoint_key] = True
+						save_checkpoint({
+								"savepoint_keys": savepoint_keys,
+								"f_all_reports": f_all_reports,
+							}, CHECKPOINT_FILE)
+	reports_df = pd.DataFrame(f_all_reports)
 	print(reports_df)
-	return all_reports
-
+	return f_all_reports
 
 if( __name__ == '__main__'):
+	#fix_chekpoints()
 	reports = exp3()
 	reports_df = pd.DataFrame(reports)
-	reports_df.to_csv('exp3.csv', index=False)
+	reports_df.to_csv('exp3_features.csv', index=False)
 	
