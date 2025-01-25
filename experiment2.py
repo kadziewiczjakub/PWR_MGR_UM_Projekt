@@ -3,11 +3,13 @@ import numpy as np
 import pandas as pd
 from sklearn import clone
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import KFold, RepeatedStratifiedKFold
+from sklearn.model_selection import KFold, RepeatedKFold, StratifiedKFold, RepeatedStratifiedKFold
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.svm import SVC
+from exp_utils import load_data_save_extracted_features
 import os
 
 
@@ -80,22 +82,23 @@ def prepare_data_for_exp2(prepared_data, train_subjects):
 def exp2():
 	# Checkpoint file
 	CHECKPOINT_FILE = "exp2_checkpoint.pkl"
-	windows = [2, 3, 10, 20, 60, 120]
+	windows = [3, 6, 10, 20, 30, 60, 120]
 	overlaps = [0, 0.25, 0.5, 0.75]
 	subject_ratios = [0.25, 0.5, 0.75]
-	N_REPEATS = 2
+	N_REPEATS = 1
 	SUBJECTS = list(range(1, 29))
 	CLASSIFIERS = [
-		RandomForestClassifier(n_estimators=100, n_jobs=-1),
-		RandomForestClassifier(n_estimators=500, n_jobs=-1),
+		RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=99),
+		RandomForestClassifier(n_estimators=500, n_jobs=-1, random_state=99),
 		KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
-		#HistGradientBoostingClassifier(max_iter=100),
-		#SVC()
+		SVC(random_state=99),
+		#None,#HistGradientBoostingClassifier(max_iter=100),
+		
 	]
 
 	SPLITTERS = [
-		KFold(n_splits=5, shuffle=True),
-		RepeatedStratifiedKFold(n_splits=5, n_repeats=2),
+		RepeatedKFold(n_splits=5, n_repeats=2, random_state=99),
+		RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=99),
 	]
 
 	# Load checkpoint if available
@@ -124,6 +127,7 @@ def exp2():
 							print(f"Classifier: {classifier_id}, Splitter: {splitter_id}, Window: {window}, Overlap: {overlap}, Subject_ratio {subject_ratio}, Repeat: {repeat}")
 
 							nrs = SUBJECTS.copy()
+							np.random.seed(99+repeat)
 							np.random.shuffle(nrs)
 							train_subjects = nrs[:int(len(nrs)*subject_ratio)]
 							train_r, test_r, train_f, test_f = prepare_data_for_exp2(all_prepared_data, train_subjects)
@@ -258,4 +262,3 @@ if __name__ == '__main__':
 	r_reports_df = pd.DataFrame(reports_r)
 	f_reports_df.to_csv('exp2_features.csv', index=False)
 	r_reports_df.to_csv('exp2_raw.csv', index=False)
-

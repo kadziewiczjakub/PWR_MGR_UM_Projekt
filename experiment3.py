@@ -7,7 +7,7 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_s
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import KFold, StratifiedKFold, RepeatedStratifiedKFold
+from sklearn.model_selection import KFold, RepeatedKFold, StratifiedKFold, RepeatedStratifiedKFold
 from sklearn.svm import SVC
 from exp_utils import load_data_save_extracted_features
 from copy import deepcopy
@@ -24,10 +24,13 @@ def load_checkpoint(CHECKPOINT_FILE):
 	return None
 
 def prepare_data_for_exp3(prepared_data, time_frame):
+	
 	start_percent, end_percent = time_frame
 
 	start_index = int(max(0, start_percent * prepared_data[0][1].shape[0] / 100))
 	end_index = int(min(prepared_data[0][1].shape[0], end_percent * prepared_data[0][1].shape[0] / 100))
+
+	
 
 	train_data = []
 	test_data = []
@@ -40,8 +43,8 @@ def prepare_data_for_exp3(prepared_data, time_frame):
 def exp3():
 	CHECKPOINT_FILE = "exp3_checkpoint.pkl"
 	#windows = [2, 3, 6, 10, 20, 30, 60, 90, 120]
-	windows = [2, 3, 10, 20, 60, 120] # TODO change if needed
-	overlaps = [0, 0.25, 0.5, 0.75] # TODO change if needed
+	windows = [3, 6, 10, 20, 30, 60, 120]
+	overlaps = [0, 0.25, 0.5, 0.75]
 	sf = 128
 	train_time_frames = [(0, 10), (10, 20), (20, 30), 
 						 (30, 40), (40, 50), (50, 60),
@@ -53,16 +56,16 @@ def exp3():
 	GAMES = list(range(1,5))
 
 	CLASSIFIERS = [
-		RandomForestClassifier(n_estimators=100, n_jobs=-1),
-		RandomForestClassifier(n_estimators=500, n_jobs=-1),
+		RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=99),
+		RandomForestClassifier(n_estimators=500, n_jobs=-1, random_state=99),
 		KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
 		#HistGradientBoostingClassifier(max_iter=1000),
 		#SVC()
 	]
 
 	SPLITTERS = [
-		KFold(n_splits=5, shuffle=True),
-		RepeatedStratifiedKFold(n_splits=5, n_repeats=2),
+		RepeatedKFold(n_splits=5, n_repeats=2, random_state=99),
+		RepeatedStratifiedKFold(n_splits=5, n_repeats=2,random_state=99),
 		#StratifiedKFold(n_splits=5, shuffle=True),
 	]
 
@@ -84,11 +87,8 @@ def exp3():
 							continue
 						path = f'all_prepared_data_{window}s_overlap_{int(overlap*100)}.pkl'
 						all_prepared_data = pickle.load(open(path, 'rb'))
-					
 						for time_frame_idx, time_frame in enumerate(train_time_frames):
 							savepoint_key = f'{repeat}_{classifier_id}_{splitter_id}_{window}_{overlap}'
-							#if time_frame_idx < start_frame:
-							#	continue
 							print(f"Classifier: {classifier_id}, Splitter: {splitter_id}, Window: {window}, Overlap: {overlap}, time_frame: {time_frame}, Repeat: {repeat}")
 
 							_, _, train_f, test_f = prepare_data_for_exp3(all_prepared_data, time_frame)
@@ -161,7 +161,6 @@ def exp3():
 	return f_all_reports
 
 if( __name__ == '__main__'):
-	#fix_chekpoints()
 	reports = exp3()
 	reports_df = pd.DataFrame(reports)
 	reports_df.to_csv('exp3_features.csv', index=False)
